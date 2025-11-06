@@ -13,14 +13,14 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# --- STREAMLIT APP HEADER ---
+# --- Streamlit UI setup ---
 st.set_page_config(page_title="Carex Scraper", layout="wide")
 st.title("🛒 Carex Product Scraper App")
-st.write("This app scrapes product variants and checks stock availability from carex.com")
+st.write("Scrape product variants and check stock status from carex.com")
 
 headers = {"User-Agent": "Mozilla/5.0"}
 
-# --- Selenium Setup ---
+# --- Chrome / Selenium setup ---
 def init_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -29,9 +29,9 @@ def init_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
 
-    # Use Chromium on Streamlit Cloud
-    if os.path.exists("/usr/bin/chromium"):
-        chrome_options.binary_location = "/usr/bin/chromium"
+    # ✅ Detect environment
+    if os.path.exists("/usr/bin/google-chrome"):
+        chrome_options.binary_location = "/usr/bin/google-chrome"
         service = Service("/usr/bin/chromedriver")
     else:
         from webdriver_manager.chrome import ChromeDriverManager
@@ -41,7 +41,7 @@ def init_driver():
     return driver
 
 
-# --- Variant Extraction Helpers ---
+# --- Helper functions ---
 def extract_variants_from_script(html):
     pattern = r'var meta = ({.*?});\s*for \(var attr in meta\)'
     match = re.search(pattern, html, re.DOTALL)
@@ -71,7 +71,7 @@ def flatten_product_variant(product, variant, product_url):
     return flat_data
 
 
-# --- Step 1: Scrape Variants ---
+# --- Step 1: Scrape product variants ---
 def scrape_variants():
     all_rows = []
     page = 1
@@ -119,11 +119,18 @@ def scrape_variants():
     output_file = "carex_variants_raw.xlsx"
     df.to_excel(output_file, index=False)
     st.success(f"✅ Done scraping variants. Saved to {output_file}")
-    st.dataframe(df.head())
+
+    st.dataframe(df.head(10))
+    st.download_button(
+        label="⬇️ Download Variants Excel",
+        data=df.to_excel(index=False, engine="openpyxl"),
+        file_name="carex_variants_raw.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
     return df
 
 
-# --- Step 2: Stock Status ---
+# --- Step 2: Check stock status ---
 def extract_first_product_info(driver, search_url, retries=5, wait_time=10):
     for attempt in range(retries):
         try:
@@ -131,9 +138,9 @@ def extract_first_product_info(driver, search_url, retries=5, wait_time=10):
             WebDriverWait(driver, wait_time).until(
                 EC.presence_of_element_located((By.CLASS_NAME, "snize-product"))
             )
-
             product = driver.find_element(By.CLASS_NAME, "snize-product")
             classes = product.get_attribute("class")
+
             stock_status = (
                 "In Stock"
                 if "snize-product-in-stock" in classes
@@ -176,7 +183,6 @@ def scrape_search_results():
     driver = init_driver()
     st.write("🔍 Checking stock status...")
     results = []
-
     progress = st.progress(0)
 
     for idx, row in df_input.iterrows():
@@ -186,7 +192,6 @@ def scrape_search_results():
         row_data["product_page_url"] = product_url
         row_data["stock_status"] = stock_status
         results.append(row_data)
-
         progress.progress(int(((idx + 1) / len(df_input)) * 100))
 
     driver.quit()
@@ -194,20 +199,26 @@ def scrape_search_results():
     df_out = pd.DataFrame(results)
     output_file = "carex_variants_checked.xlsx"
     df_out.to_excel(output_file, index=False)
-
     st.success(f"✅ Stock status checked. Saved to {output_file}")
-    st.dataframe(df_out.head())
+
+    st.dataframe(df_out.head(10))
+    st.download_button(
+        label="⬇️ Download Checked Excel",
+        data=df_out.to_excel(index=False, engine="openpyxl"),
+        file_name="carex_variants_checked.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
     return df_out
 
 
-# --- STREAMLIT UI ---
+# --- Streamlit UI Controls ---
 st.divider()
 st.header("🔹 Actions")
 
-if st.button("Step 1️⃣  Scrape Variants"):
+if st.button("Step 1️⃣  Scrape Product Variants"):
     scrape_variants()
 
 if st.button("Step 2️⃣  Check Stock Status"):
     scrape_search_results()
 
-st.info("ℹ️ Tip: Run Step 1 first, then Step 2.")
+st.info("💡 Tip: Run Step 1 first, then Step 2.")
